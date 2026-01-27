@@ -4,7 +4,7 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
-from landmarks_to_angles import calculate_angle
+from poseguru_core.angles_utils import calculate_angle
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
