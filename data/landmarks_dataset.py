@@ -64,6 +64,6 @@ class YogaLandmarksDataset(Dataset):
         pose_name = row["pose_name"]
         label = self.label_mapping[pose_name]
 
-        coords = torch.tensor(row[self.landmark_cols].values, dtype=torch.float32)  # (24,)
+        coords = torch.tensor(row[self.landmark_cols].values.astype(float), dtype=torch.float32)  # (24,)
         return coords, label
 

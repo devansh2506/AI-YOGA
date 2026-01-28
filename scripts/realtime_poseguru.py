@@ -103,7 +103,9 @@ def main():
     ex_data = np.load(DATA_DIR / "exemplars_yoga.npz", allow_pickle=True)
     ex_landmarks = ex_data["landmarks"]  # (C,12,2)
     ex_labels = ex_data["labels"]  # (C,)
+    ex_image_names = ex_data["image_names"]
     exemplar_by_class = {int(c): ex_landmarks[i] for i, c in enumerate(ex_labels)}
+    exemplar_img_name_by_class = {int(c): ex_image_names[i] for i, c in enumerate(ex_labels)}
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -121,8 +123,16 @@ def main():
         return
 
     print("Press 'q' to quit.")
+    print("Press 'n' for next pose, 'p' for previous pose.")
 
+    # Manual selection init
+    sorted_labels = sorted(label_mapping.items(), key=lambda item: item[1]) # List of (name, id) sorted by id
+    num_classes = len(sorted_labels)
+    current_class_idx = 0 
+    
     while True:
+        target_pose_name, target_class_id = sorted_labels[current_class_idx]
+
         ret, frame = cap.read()
         if not ret:
             break
@@ -132,23 +142,48 @@ def main():
         detection_result = detector.detect(mp_image)
 
         landmarks = extract_12_landmarks_xy(detection_result)
+        
+        # UI: Draw Target Name
+        cv2.putText(
+            frame,
+            f"Target: {target_pose_name} ({current_class_idx+1}/{num_classes})",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            "Press 'n'/'p' to switch",
+            (10, 60), 
+            cv2.FONT_HERSHEY_TRIPLEX, 
+            0.5, 
+            (200, 200, 200), 
+            1, 
+            cv2.LINE_AA
+        )
+
         if landmarks is None:
+            # Still show the target name even if no person is detected
             cv2.imshow("PoseGuru Realtime", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 break
+            elif key == ord("n"):
+                current_class_idx = (current_class_idx + 1) % num_classes
+            elif key == ord("p"):
+                current_class_idx = (current_class_idx - 1 + num_classes) % num_classes
             continue
 
         # build tensors
         x_prime_np = landmarks[None, :, :]  # (1,12,2)
         x_prime = torch.tensor(x_prime_np, dtype=torch.float32, device=device)
 
-        # classify current pose
-        x_flat = x_prime.view(1, -1)
-        with torch.no_grad():
-            logits = model(x_flat)
-            probs = torch.softmax(logits, dim=1)
-            pred_class = int(probs.argmax(dim=1)[0].item())
-
+        # MANUAL SELECTION: No classification
+        pred_class = target_class_id
+        
         # exemplar for predicted class
         x_ex_np = exemplar_by_class[pred_class][None, :, :]
         x_ex = torch.tensor(x_ex_np, dtype=torch.float32, device=device)
@@ -168,24 +203,92 @@ def main():
         x_final, deltas = refine_pose(x_prime.cpu(), x_star)
         x_final_np = x_final.numpy()[0]  # (12,2)
 
-        # draw original (red) and corrected (green)
+        # draw original (red)
         draw_skeleton(frame, landmarks, (0, 0, 255), thickness=2)
-        draw_skeleton(frame, x_final_np, (0, 255, 0), thickness=2)
+        # HIDING BLUE AND GREEN LINES AS REQUESTED
+        # draw_skeleton(frame, x_ex_np[0], (255, 0, 0), thickness=2) # Draw exemplar in Blue
+        # draw_skeleton(frame, x_final_np, (0, 255, 0), thickness=2)
+
+        # Overlay Exemplar Image
+        try:
+            ex_img_name = exemplar_img_name_by_class[pred_class]
+            # Use the pose name from our manual selection list
+            pred_pose_name = target_pose_name
+            
+            # Construct path: yoga data/train/<pose_name>/<image_name>
+            img_path = ROOT_DIR / "yoga data" / "train" / pred_pose_name / ex_img_name
+            
+            if img_path.exists():
+                ex_img = cv2.imread(str(img_path))
+                if ex_img is not None:
+                    # Resize to a small fixed size, e.g., 200px height
+                    target_h = 200
+                    scale = target_h / ex_img.shape[0]
+                    target_w = int(ex_img.shape[1] * scale)
+                    ex_img_resized = cv2.resize(ex_img, (target_w, target_h))
+                    
+                    # Overlay on top-right corner
+                    h, w, _ = frame.shape
+                    # Ensure it fits
+                    if target_w < w and target_h < h:
+                        frame[0:target_h, w-target_w:w] = ex_img_resized
+                        
+                        # Draw a border
+                        cv2.rectangle(frame, (w-target_w, 0), (w, target_h), (255, 255, 255), 2)
+                        
+                        # Label it
+                        cv2.putText(frame, "Ideal Pose", (w-target_w+5, 20), 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+        except Exception as e:
+            print(f"Error displaying exemplar image: {e}")
+
+
+        from poseguru_core.xai_feedback import generate_feedback
+        feedback = generate_feedback(landmarks, x_final_np)
+        
+        # Display Correct/Incorrect status
+        status_text = "INCORRECT POSE"
+        status_color = (0, 0, 255) # Red
+        if not feedback or feedback[0] == "Great pose! Hold it.":
+             status_text = "CORRECT POSE"
+             status_color = (0, 255, 0) # Green
 
         cv2.putText(
             frame,
-            f"Pred: {list(label_mapping.keys())[list(label_mapping.values()).index(pred_class)]}",
-            (10, 30),
+            status_text,
+            (10, 90), # Moved down slightly
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 255),
-            2,
+            1.0,
+            status_color,
+            3,
             cv2.LINE_AA,
         )
 
+        y_offset = 130
+        for msg in feedback:
+            if msg == "Great pose! Hold it.": continue # Don't show this if we have big Green text already
+            cv2.putText(
+                frame,
+                msg,
+                (10, y_offset),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 255, 255),  # Yellow color for feedback
+                2,
+                cv2.LINE_AA
+            )
+            y_offset += 40
+
+
         cv2.imshow("PoseGuru Realtime", frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
             break
+        elif key == ord("n"):
+            current_class_idx = (current_class_idx + 1) % num_classes
+        elif key == ord("p"):
+            current_class_idx = (current_class_idx - 1 + num_classes) % num_classes
+
 
     cap.release()
     cv2.destroyAllWindows()

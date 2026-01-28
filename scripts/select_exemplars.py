@@ -49,11 +49,13 @@ def main():
     train_csv = DATA_DIR / "yoga_pose_landmarks_train.csv"
     df = pd.read_csv(train_csv)
     pose_names = df["pose_name"].values
+    image_names = df["image_name"].values
 
     num_classes = len(label_mapping)
     exemplar_landmarks = []
     exemplar_labels = []
     exemplar_pose_names = []
+    exemplar_image_names = []
 
     for class_id in range(num_classes):
         mask = labels_arr == class_id
@@ -68,11 +70,13 @@ def main():
         exemplar_landmarks.append(landmarks_arr[best_idx_in_class])
         exemplar_labels.append(int(class_id))
         exemplar_pose_names.append(str(pose_names[best_idx_in_class]))
+        exemplar_image_names.append(str(image_names[best_idx_in_class]))
 
     exemplar_landmarks = np.stack(exemplar_landmarks, axis=0)  # (C,24)
     exemplar_landmarks = exemplar_landmarks.reshape(exemplar_landmarks.shape[0], 12, 2)
     exemplar_labels = np.array(exemplar_labels, dtype=np.int64)
     exemplar_pose_names = np.array(exemplar_pose_names, dtype=object)
+    exemplar_image_names = np.array(exemplar_image_names, dtype=object)
 
     out_path = DATA_DIR / "exemplars_yoga.npz"
     np.savez(
@@ -80,6 +84,7 @@ def main():
         landmarks=exemplar_landmarks,
         labels=exemplar_labels,
         pose_names=exemplar_pose_names,
+        image_names=exemplar_image_names,
     )
 
     print(f"Saved {len(exemplar_labels)} exemplars to {out_path}")
