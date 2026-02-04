@@ -9,22 +9,54 @@ It uses:
 - A refinement step and action vector
 - A real-time webcam demo for live pose correction
 
+---
+
+### 🚀 Quick Start (Running the System)
+
+If you just want to run the real-time AI Yoga assistant:
+
+1. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Run the Application**
+   ```bash
+   python run.py
+   ```
+
+3. **Follow the On-Screen Instructions**
+   - Enter the name of the yoga pose you want to practice (e.g., "tree pose", "cobra").
+   - Confirm the match found by the system.
+   - The webcam feed will open. A skeleton overlay will show your pose (in red) and provide real-time textual feedback.
+   - An "Ideal Pose" image will appear in the top-right corner to guide you.
+   - Press **`q`** to quit.
+
+---
+
+### 🛠️ Manual Setup & Pipeline Details
+
+If you want to retrain the model, generate new data, or understand the internals, follow the steps below.
+
 ### 1. Environment Setup
 
 - **Python**: 3.9+ recommended
-- Install dependencies (adjust to your environment as needed):
-
-```bash
-pip install torch mediapipe opencv-python numpy pandas
-```
+- It is recommended to use a virtual environment:
+  ```bash
+  python -m venv venv
+  source venv/bin/activate  # On Windows: venv\Scripts\activate
+  ```
+- Install dependencies:
+  ```bash
+  pip install -r requirements.txt
+  ```
 
 Make sure your Yoga images live under:
-
 - `yoga data/train`
 - `yoga data/val`
 - `yoga data/test`
 
-and that `pose_landmarker_full.task` (MediaPipe model) is in the repo root.
+And ensure `pose_landmarker_full.task` (MediaPipe model) is in the repo root.
 
 ### 2. Generate Landmarks (12-keypoint) CSVs
 
@@ -37,12 +69,11 @@ python scripts/generate_landmarks.py
 ```
 
 This produces:
-
 - `data/yoga_pose_landmarks_train.csv`
 - `data/yoga_pose_landmarks_val.csv`
 - `data/yoga_pose_landmarks_test.csv`
 
-Each row contains `pose_name` and 12 keypoints (x,y) normalized to \[0,1].
+Each row contains `pose_name` and 12 keypoints (x,y) normalized to [0,1].
 
 ### 3. Train the Pose Classifier `Mcls`
 
@@ -53,7 +84,6 @@ python scripts/train_classifier.py
 ```
 
 This saves:
-
 - `models/mcls_yoga.pt` – classifier weights
 - `models/label_mapping.json` – mapping from `pose_name` to class index
 
@@ -66,7 +96,6 @@ python scripts/select_exemplars.py
 ```
 
 Output:
-
 - `data/exemplars_yoga.npz` containing:
   - `landmarks`: (C, 12, 2) landmark arrays
   - `labels`: class ids
@@ -81,11 +110,9 @@ python scripts/generate_incorrect_poses.py
 ```
 
 This writes:
-
 - `data/incorrect_pose_landmarks.csv`
 
 Each row contains:
-
 - `pose_name`, `segment`, `joint_name`
 - 12×(x,y) for the **correct** pose
 - 12×(x,y) for the **incorrect** pose
@@ -99,21 +126,19 @@ python scripts/evaluate_poseguru.py
 ```
 
 This computes and prints:
-
 - **MPIJAD** – Mean Per Incorrect Joint Absolute Deviation
 - **PCP@MPIJAD (T=0.1)** – fraction of poses whose mean incorrect-joint deviation is ≤ 0.1
 - **PCIK (T=0.1)** – Percentage of Corrected Incorrect Keypoints
 
 ### 7. Real-Time PoseGuru Demo (Webcam)
 
-To run the live yoga pose correction demo:
+`run.py` is the main entry point, but you can also run the script directly:
 
 ```bash
 python scripts/realtime_poseguru.py
 ```
 
 What it does per frame:
-
 - Captures a frame from your webcam
 - Runs MediaPipe BlazePose to get 33 keypoints and reduces them to 12 landmarks
 - Classifies the pose with `Mcls`

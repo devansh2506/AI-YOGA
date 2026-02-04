@@ -10,7 +10,7 @@ JOINT_NAMES = [
     "left_ankle", "right_ankle",
 ]
 
-def generate_feedback(current_pose: np.ndarray, corrected_pose: np.ndarray, threshold: float = 0.10) -> List[str]:
+def generate_feedback(current_pose: np.ndarray, corrected_pose: np.ndarray, threshold: float = 0.20) -> List[str]:
     """
     Generates text feedback based on the difference between current and corrected pose.
     

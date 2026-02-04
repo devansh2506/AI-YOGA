@@ -10,7 +10,6 @@ from models.mcls import LandmarkMLP, save_model_and_labels
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
-
 def train_epoch(model, loader, criterion, optimizer, device):
     model.train()
     total_loss = 0.0

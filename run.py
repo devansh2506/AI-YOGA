@@ -97,6 +97,15 @@ def main():
     options = vision.PoseLandmarkerOptions(base_options=base_options, num_poses=1)
     detector = vision.PoseLandmarker.create_from_options(options)
 
+    # State for smoothing
+    smoothed_landmarks = None
+    alpha = 0.5  # Smoothing factor (0.0=no smoothing, 1.0=instant)
+    
+    # State for feedback stabilizing
+    feedback_frame_count = 0
+    feedback_interval = 15  # Update feedback every 15 frames
+    current_feedback = []
+
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("Could not open webcam.")
@@ -114,7 +123,19 @@ def main():
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
         detection_result = detector.detect(mp_image)
 
-        landmarks = extract_12_landmarks_xy(detection_result)
+        landmarks_raw = extract_12_landmarks_xy(detection_result)
+        
+        if landmarks_raw is None:
+            # If tracking lost, reset smoothing
+            smoothed_landmarks = None
+            landmarks = None
+        else:
+            if smoothed_landmarks is None:
+                smoothed_landmarks = landmarks_raw
+            else:
+                # EMA: new_smoothed = alpha * current + (1 - alpha) * old_smoothed
+                smoothed_landmarks = alpha * landmarks_raw + (1 - alpha) * smoothed_landmarks
+            landmarks = smoothed_landmarks
         
         # Display Target
         cv2.putText(frame, f"Target: {target_pose_name}", (10, 30), 
@@ -169,7 +190,16 @@ def main():
 
         # Feedback
         from poseguru_core.xai_feedback import generate_feedback
-        feedback = generate_feedback(landmarks, x_final_np)
+        
+        feedback_frame_count += 1
+        if feedback_frame_count % feedback_interval == 0:
+             current_feedback = generate_feedback(landmarks, x_final_np)
+             
+        # Initial case
+        if not current_feedback and feedback_frame_count < feedback_interval:
+             current_feedback = generate_feedback(landmarks, x_final_np)
+             
+        feedback = current_feedback
         
         status_text = "INCORRECT POSE"
         status_color = (0, 0, 255)
